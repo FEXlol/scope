@@ -23,7 +23,7 @@ body.port #p{left:8px;right:8px;width:auto;bottom:8px;max-height:46%}
 <div id="p">
 <button id="pt" type="button"></button>
 <label><span>Magnification <output id="o_mag"></output></span><input id="mag" type="range" min="1" max="16" step="0.1" value="6"></label>
-<label><span>Eye relief <output id="o_er"></output></span><input id="er" type="range" min="60" max="130" step="1" value="90"></label>
+<label><span>Eye relief <output id="o_er"></output></span><input id="er" type="range" min="60" max="130" step="0.1" value="90"></label>
 <label><span>Head offset, horizontal <output id="o_hx"></output></span><input id="hx" type="range" min="-15" max="15" step="0.01" value="0"></label>
 <label><span>Head offset, vertical <output id="o_hy"></output></span><input id="hy" type="range" min="-15" max="15" step="0.01" value="0"></label>
 <label><span>Parallax error <output id="o_par"></output></span><input id="par" type="range" min="0" max="100" step="1" value="10"></label>
@@ -219,7 +219,7 @@ addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;if((k.st
 function frame(ts){
  const t=ts/1000,dt=Math.min(.05,Math.max(0,(ts-t0)/1000));adapt(ts-t0);t0=ts;ctx.setTransform(dpr,0,0,dpr,0,0);
  keysStep(dt,+$('mag').value);TOD=todState(+$('tod').value);gstep(dt);
- const tm=+$('mag').value,te=gcl(+$('er').value+erOff,60,130),tp=+$('par').value,ts2=+$('sway').value,tf=1-Math.exp(-dt*9);
+ const tm=+$('mag').value,te=+$('er').value,tp=+$('par').value,ts2=+$('sway').value,tf=1-Math.exp(-dt*9);
  if(sv.mag==null){sv.mag=tm;sv.er=te;sv.par=tp;sv.sway=ts2}
  else{sv.mag*=Math.pow(tm/sv.mag,tf);sv.er+=(te-sv.er)*tf;sv.par+=(tp-sv.par)*tf;sv.sway+=(ts2-sv.sway)*tf;
   if(Math.abs(tm/sv.mag-1)<.0005)sv.mag=tm;if(Math.abs(te-sv.er)<.01)sv.er=te;if(Math.abs(tp-sv.par)<.01)sv.par=tp;if(Math.abs(ts2-sv.sway)<.001)sv.sway=ts2}
@@ -293,7 +293,7 @@ requestAnimationFrame(frame);
 
 /* phone orientation: the direction the phone's back points sets the head offset, and twisting it sets eye relief.
    Uses the high-rate Generic Sensor API where it exists (Chrome on Android) and falls back to deviceorientation. Smoothed per frame, so slow or coarse sensor updates still look continuous. */
-let gyr=null,gseen=false,gsrc=null,erOff=0;
+let gyr=null,gseen=false,gsrc=null,erBase=90,erSet=null;
 const gcl=(v,a,b)=>Math.max(a,Math.min(b,v)),gwrap=d=>((d+540)%360+360)%360-180,gset=t=>{const e=$('gs');e.textContent=t;e.style.display=t?'block':'none'};
 function gfeed(d,u){
  const R=180/Math.PI,hd=Math.atan2(d[0],d[1])*R,el=Math.asin(gcl(d[2],-1,1))*R,hl=Math.hypot(d[0],d[1])||1,hx=-d[1]/hl,hy=d[0]/hl,
@@ -314,13 +314,13 @@ function gbegin(){
   s.addEventListener('error',()=>{if(gsrc&&gsrc.s===s){try{s.stop()}catch(e){}gsrc=null;gfall()}});
   s.start();gsrc={s,stop:()=>{try{s.stop()}catch(e){}}};return}catch(e){}}
  gfall()}
-function gstop(){if(gsrc){gsrc.stop();gsrc=null}gyr=null;erOff=0}
+function gstop(){if(gsrc){gsrc.stop();gsrc=null}gyr=null;erSet=null}
 function gstep(dt){if(!gyr)return;const k=1-Math.exp(-dt*14);gyr.fx+=(gyr.tx-gyr.fx)*k;gyr.fy+=(gyr.ty-gyr.fy)*k;gyr.fr+=(gyr.tr-gyr.fr)*k;
  if($('gyro').checked){const g=+$('gg').value;$('hx').value=gcl(-gyr.fx*g,-15,15);$('hy').value=gcl(gyr.fy*g,-15,15)}
- erOff=$('twist').checked?gcl(-gyr.fr,-35,35):0}
+ if($('twist').checked){const cur=+$('er').value;if(erSet!==null&&Math.abs(cur-erSet)>.05)erBase=cur+gyr.fr;$('er').value=gcl(erBase-gyr.fr,60,130);erSet=+$('er').value}}
 function gfail(id,m){$(id).checked=false;if(!$('gyro').checked&&!$('twist').checked)gstop();gset(m)}
 function gtap(id){
- if(!$('twist').checked)erOff=0;
+ if(id=='twist'&&$('twist').checked){erBase=+$('er').value+(gyr?gyr.fr:0);erSet=null}
  if(!$('gyro').checked&&!$('twist').checked){gstop();gset('');return}
  if(!$(id).checked)return;
  if(id=='gyro')$('follow').checked=false;
