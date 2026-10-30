@@ -29,10 +29,12 @@ select{width:100%;background:#12171b;color:var(--ink);border:1px solid var(--lin
 <select id="ret"><option value="ffp">Reticle: first focal plane</option><option value="sfp">Reticle: second focal plane</option></select>
 <label class="chk"><input type="checkbox" id="ill"> Illuminated reticle</label>
 <label class="chk"><input type="checkbox" id="follow" checked> Head follows mouse</label>
-<label class="chk"><input type="checkbox" id="gyro"> Gyro aim (phone)</label>
-<label id="ggl"><span>Gyro gain <output id="o_gg"></output></span><input id="gg" type="range" min="0.05" max="1" step="0.05" value="0.3"></label>
+<label class="chk"><input type="checkbox" id="gyro"> Gyro head offset (phone)</label>
+<label class="chk"><input type="checkbox" id="push"> Push phone to move eye relief (rough)</label>
+<button id="gz" type="button" style="width:100%;margin:0 0 8px;padding:5px;background:#12171b;color:var(--ink);border:1px solid var(--line);border-radius:6px">Recenter phone</button>
+<label id="ggl"><span>Gyro gain <output id="o_gg"></output></span><input id="gg" type="range" min="0.2" max="3" step="0.1" value="1"></label>
 <p class="hint" id="gs" style="display:none"></p>
-<p class="hint">WASD or arrows: aim. Shift+WASD: move your head (turns off mouse follow). Wheel: zoom. Shift+wheel: eye relief. Phone: turn on Gyro aim and point the phone.</p>
+<p class="hint">WASD or arrows: aim. Shift+WASD: move your head (turns off mouse follow). Wheel: zoom. Shift+wheel: eye relief. Phone: turn on Gyro head offset and tilt the phone.</p>
 </div>
 <script>
 const $=id=>document.getElementById(id);
@@ -210,7 +212,7 @@ addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;if((k.st
 function frame(ts){
  const t=ts/1000,dt=Math.min(.05,Math.max(0,(ts-t0)/1000));adapt(ts-t0);t0=ts;ctx.setTransform(dpr,0,0,dpr,0,0);
  keysStep(dt,+$('mag').value);TOD=todState(+$('tod').value);
- const tm=+$('mag').value,te=+$('er').value,tp=+$('par').value,ts2=+$('sway').value,tf=1-Math.exp(-dt*9);
+ const tm=+$('mag').value,te=gcl(+$('er').value+erOff,60,130),tp=+$('par').value,ts2=+$('sway').value,tf=1-Math.exp(-dt*9);
  if(sv.mag==null){sv.mag=tm;sv.er=te;sv.par=tp;sv.sway=ts2}
  else{sv.mag*=Math.pow(tm/sv.mag,tf);sv.er+=(te-sv.er)*tf;sv.par+=(tp-sv.par)*tf;sv.sway+=(ts2-sv.sway)*tf;
   if(Math.abs(tm/sv.mag-1)<.0005)sv.mag=tm;if(Math.abs(te-sv.er)<.01)sv.er=te;if(Math.abs(tp-sv.par)<.01)sv.par=tp;if(Math.abs(ts2-sv.sway)<.001)sv.sway=ts2}
@@ -277,35 +279,41 @@ function frame(ts){
  ctx.fillText(ln[0],mx+12,my+bw+18);ctx.fillText(ln[1],mx+12,my+bw+36);ctx.fillText(ln[2],mx+12,my+bw+54);
  ctx.fillStyle=scol;ctx.fillText(status,mx+12+(ebW||(ebW=ctx.measureText(ln[2]).width)),my+bw+54);
  if(er<75){ctx.fillStyle='#e8695a';ctx.fillText('Too close: scope bite risk',mx+12,my+bw+70)}
- for(const n of['mag','er','hx','hy','par','sway','gg','tod']){const v=+$(n).value,tx=n=='tod'?hm(v):n=='gg'?v.toFixed(2)+'×':n=='mag'?v.toFixed(1)+'×':n=='er'?v+' mm':n=='par'?v+'%':n=='sway'?v.toFixed(1):v.toFixed(1)+' mm',o=$('o_'+n);if(o._t!==tx){o._t=tx;o.textContent=tx}}
+ for(const n of['mag','er','hx','hy','par','sway','gg','tod']){const v=+$(n).value,tx=n=='tod'?hm(v):n=='gg'?v.toFixed(1)+' mm/°':n=='mag'?v.toFixed(1)+'×':n=='er'?v+' mm':n=='par'?v+'%':n=='sway'?v.toFixed(1):v.toFixed(1)+' mm',o=$('o_'+n);if(o._t!==tx){o._t=tx;o.textContent=tx}}
  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-/* gyro aim: the direction the phone's back points in becomes yaw/pitch, applied as deltas so touch drag and keys still work */
-let gyr=null,gseen=false;
-const gcl=(v,a,b)=>Math.max(a,Math.min(b,v)),gset=t=>{const e=$('gs');e.textContent=t;e.style.display=t?'block':'none'};
+/* phone motion: orientation drives the head offset; optional accelerometer push nudges eye relief (leaky integration, so it springs back) */
+let gyr=null,gseen=false,erOff=0,mv=0,mx=0,ma=0,mt=0;
+const gcl=(v,a,b)=>Math.max(a,Math.min(b,v)),gwrap=d=>((d+540)%360+360)%360-180,gset=t=>{const e=$('gs');e.textContent=t;e.style.display=t?'block':'none'};
 function onOri(e){
- if(e.alpha==null||e.beta==null||e.gamma==null){if(!gseen)gset('The browser sent no motion data. In Chrome, check Site settings, Motion sensors, is set to Allowed for this site.');return}gseen=true;gset('');
+ if(e.alpha==null||e.beta==null||e.gamma==null){if(!gseen)gset('The browser sent no motion data. Check that motion sensors are allowed for this site.');return}gseen=true;gset('');
  const r=Math.PI/180,a=e.alpha*r,b=e.beta*r,c=e.gamma*r,
  dx=-(Math.cos(a)*Math.sin(c)+Math.sin(a)*Math.sin(b)*Math.cos(c)),
  dy=-(Math.sin(a)*Math.sin(c)-Math.cos(a)*Math.sin(b)*Math.cos(c)),
  dz=-(Math.cos(b)*Math.cos(c)),
  hd=Math.atan2(dx,dy)/r,el=Math.asin(gcl(dz,-1,1))/r;
- if(gyr){let dh=hd-gyr.h;dh=((dh+540)%360+360)%360-180;const k=+$('gg').value;
-  yaw=gcl(yaw+dh*k,-60,60);pitch=gcl(pitch+(el-gyr.e)*k,-4,8)}
- gyr={h:hd,e:el}}
-if(!window.DeviceOrientationEvent){$('gyro').parentNode.style.display='none';$('ggl').style.display='none'}
-function gfail(m){$('gyro').checked=false;removeEventListener('deviceorientation',onOri);gyr=null;gset(m)}
-function gstart(){if(!window.isSecureContext){gfail('Chrome blocks motion sensors on pages opened from a file. Open this page from an https:// link instead.');return}
- gyr=null;gseen=false;addEventListener('deviceorientation',onOri);
- setTimeout(()=>{if($('gyro').checked&&!gseen)gset('No sensor data yet. Needs a phone, HTTPS and motion access.')},1500)}
-$('gyro').addEventListener('click',()=>{
- if(!$('gyro').checked){removeEventListener('deviceorientation',onOri);gyr=null;gset('');return}
- /* the permission request must be the first thing that happens inside the tap, or iOS refuses it without asking */
- const D=window.DeviceOrientationEvent,ask=D&&typeof D.requestPermission==='function'?D.requestPermission():Promise.resolve('granted');
- ask.then(r=>{if(r==='granted')gstart();else gfail('The browser refused motion access without asking. If this page is open inside another app or a preview, open its link directly in Safari or Chrome, reload, and try again.')})
-  .catch(err=>gfail('Motion access failed: '+(err&&err.message||err)+'. Try opening the page directly in Safari or Chrome.'))});
+ if(!gyr)gyr={h0:hd,e0:el,fx:0,fy:0};
+ gyr.rh=hd;gyr.re=el;const f=.3;
+ gyr.fx+=(gwrap(hd-gyr.h0)-gyr.fx)*f;gyr.fy+=(el-gyr.e0-gyr.fy)*f;
+ const k=+$('gg').value;$('hx').value=gcl(gyr.fx*k,-15,15);$('hy').value=gcl(-gyr.fy*k,-15,15)}
+function onMot(e){const a=e.acceleration;if(!a||a.z==null)return;
+ const now=e.timeStamp||performance.now(),dt=mt?Math.min(.05,(now-mt)/1000):0;mt=now;if(!dt)return;
+ ma+=(a.z-ma)*.3;const u=Math.abs(ma)<.12?0:ma;
+ mv=(mv-u*dt)*Math.exp(-dt*4);mx=(mx+mv*dt)*Math.exp(-dt*1.5);erOff=gcl(mx*1000,-35,35)}
+function gfail(id,m){$(id).checked=false;if(id=='gyro'){removeEventListener('deviceorientation',onOri);gyr=null}else{removeEventListener('devicemotion',onMot);erOff=0}gset(m)}
+function gon(id,C,type,fn){$(id).addEventListener('click',()=>{
+ if(!$(id).checked){removeEventListener(type,fn);if(id=='gyro')gyr=null;else erOff=0;gset('');return}
+ /* the permission request has to be the first thing in the tap (iOS) */
+ const p=C&&typeof C.requestPermission==='function'?C.requestPermission():Promise.resolve('granted');
+ if(!window.isSecureContext){gfail(id,'Motion sensors are blocked on pages opened from a file. Open this page from an https:// link.');return}
+ p.then(r=>{if(r!=='granted')return gfail(id,'The browser refused motion access. Open the page directly in Chrome or Firefox, not inside another app, and try again.');
+  if(id=='gyro'){$('follow').checked=false;gyr=null;gseen=false;setTimeout(()=>{if($('gyro').checked&&!gseen)gset('No sensor data yet. Needs a phone and motion access.')},1500)}else{mt=0;mv=mx=ma=0}
+  addEventListener(type,fn)}).catch(err=>gfail(id,'Motion access failed: '+(err&&err.message||err)))})}
+gon('gyro',window.DeviceOrientationEvent,'deviceorientation',onOri);gon('push',window.DeviceMotionEvent,'devicemotion',onMot);
+$('gz').addEventListener('click',()=>{if(gyr){gyr.h0=gyr.rh;gyr.e0=gyr.re;gyr.fx=gyr.fy=0}});
+if(!window.DeviceOrientationEvent){for(const n of['gyro','push'])$(n).parentNode.style.display='none';$('ggl').style.display='none';$('gz').style.display='none'}
 
 /* input */
 ['hx','hy'].forEach(id=>$(id).addEventListener('input',()=>{$('follow').checked=false}));
