@@ -7,7 +7,9 @@
 html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.4 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
 body{position:relative}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
-#p{position:absolute;right:12px;bottom:12px;width:244px;padding:12px 14px;background:rgba(12,15,18,.93);border:1px solid var(--line);border-radius:10px}
+#p{position:absolute;right:12px;bottom:12px;width:244px;max-height:calc(100% - 24px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;padding:12px 14px;background:rgba(12,15,18,.93);border:1px solid var(--line);border-radius:10px}
+#pt{display:block;width:100%;margin:0 0 8px;padding:7px;background:#12171b;color:var(--acc);border:1px solid var(--line);border-radius:6px;font:inherit;font-weight:600}
+#p.min{width:auto;left:auto!important;padding:5px}#p.min #pt{margin:0;padding:7px 12px}#p.min>*:not(#pt){display:none}
 #p label{display:block;margin:0 0 8px;color:var(--mute)}
 #p label span{display:flex;justify-content:space-between;color:var(--ink)}
 #p output{color:var(--acc);font-variant-numeric:tabular-nums}
@@ -15,10 +17,11 @@ input[type=range]{width:100%;margin:2px 0 0;accent-color:var(--acc)}
 select{width:100%;background:#12171b;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px;margin-bottom:8px}
 .chk{display:flex!important;align-items:center;gap:6px;margin:0 0 6px!important;color:var(--ink)!important}
 .hint{margin:6px 0 0;color:var(--mute);font-size:12px}
-@media(max-width:700px){#p{left:8px;right:8px;width:auto;bottom:8px}}
+body.port #p{left:8px;right:8px;width:auto;bottom:8px;max-height:46%}
 </style></head><body>
 <canvas id="c"></canvas>
 <div id="p">
+<button id="pt" type="button"></button>
 <label><span>Magnification <output id="o_mag"></output></span><input id="mag" type="range" min="1" max="16" step="0.1" value="6"></label>
 <label><span>Eye relief <output id="o_er"></output></span><input id="er" type="range" min="60" max="130" step="1" value="90"></label>
 <label><span>Head offset, horizontal <output id="o_hx"></output></span><input id="hx" type="range" min="-15" max="15" step="0.01" value="0"></label>
@@ -49,7 +52,11 @@ function adapt(ms){if(ms>250||ms<=0)return;ema+=(ms-ema)*.05;const now=performan
  if(ema>30&&qi<Q.length-1&&now-lastChg>1200){bad=qi;badT=now+15000;qi++;lastChg=now;ema=16.7;resize()}
  else if(ema<19.5&&qi>0&&now-lastChg>6000&&(qi-1!==bad||now>badT)){qi--;lastChg=now;ema=16.7;resize()}}
 let W=0,H=0,dpr=1,yaw=0.4,pitch=-1.7,drag=null,hs={x:0,y:0},keys={};
-function resize(){nd=Math.min(window.devicePixelRatio||1,2);dpr=Math.max(1,nd*Q[qi].d);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;per.width=Math.ceil(W/5);per.height=Math.ceil(H/5);perKey='';hKey='';panelH=$('p').offsetHeight}
+function lay(){const c=$('p').classList.contains('min'),land=W>H;return{rp:land&&!c?270:0,ph:!land&&!c?panelH+20:0}}
+function ptxt(){$('pt').textContent=$('p').classList.contains('min')?'Controls ▴':'Hide controls ▾'}
+if(Math.min(innerWidth,innerHeight)<520)$('p').classList.add('min');ptxt();
+$('pt').addEventListener('click',()=>{$('p').classList.toggle('min');ptxt();panelH=$('p').offsetHeight});
+function resize(){document.body.className=innerWidth>innerHeight?'land':'port';nd=Math.min(window.devicePixelRatio||1,2);dpr=Math.max(1,nd*Q[qi].d);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;per.width=Math.ceil(W/5);per.height=Math.ceil(H/5);perKey='';hKey='';panelH=$('p').offsetHeight}
 addEventListener('resize',resize);resize();if(window.ResizeObserver)new ResizeObserver(()=>{panelH=$('p').offsetHeight}).observe($('p'));
 
 /* procedural terrain: noise is sampled once into lookup tables */
@@ -219,7 +226,7 @@ function frame(ts){
  const mag=sv.mag,er=sv.er,par=sv.par/100,swy=sv.sway;
  const f=1-Math.exp(-dt*(gyr&&$('gyro').checked?40:6));hs.x+=(+$('hx').value-hs.x)*f;hs.y+=(+$('hy').value-hs.y)*f;
  const hx=hs.x+swy*(Math.sin(t*.9+2)*.5+Math.sin(t*2.1)*.2),hy=hs.y+swy*(Math.sin(t*1.3)*.4+Math.sin(t*2.7+1)*.15);
- const narrow=W<700,ph=narrow?panelH+20:0,rp=narrow?0:270;
+ const {rp,ph}=lay();
  const es=Math.pow(90/er,.6),Ro=Math.min((W-rp)*.47,(H-ph)*.46)*es,R=Ro*.84,cx=(W-rp)/2-hx*R*.014,cy=(H-ph)/2-hy*R*.014;
  const fovS=20/mag,ppdD=2*R/fovS;
  const sy=swy*(Math.sin(t*.8)*.02+Math.sin(t*2.3)*.006),sp=swy*(Math.sin(t*1.1)*.03+Math.sin(t*3.1)*.008);
@@ -335,7 +342,7 @@ cv.addEventListener('pointerup',()=>drag=null);
 cv.addEventListener('pointermove',e=>{
  const mag=+$('mag').value,fovS=20/mag;
  if(drag&&(e.pointerType!='mouse'||!$('follow').checked)){const r=Math.min(W*.47,H*.46)*.84,k=fovS/(2*r);yaw-=(e.clientX-drag.x)*k;pitch+=(e.clientY-drag.y)*k;yaw=Math.max(-60,Math.min(60,yaw));pitch=Math.max(-4,Math.min(8,pitch));drag={x:e.clientX,y:e.clientY}}
- else if(e.pointerType=='mouse'&&$('follow').checked){const Ro=Math.min(W*.47,H*.46),b=cv.getBoundingClientRect(),c=Math.max(-15,Math.min(15,-(e.clientX-b.left-(W-(W<700?0:270))/2)/Ro*14)),v=Math.max(-15,Math.min(15,-(e.clientY-b.top-H/2)/Ro*14));$('hx').value=c;$('hy').value=v}
+ else if(e.pointerType=='mouse'&&$('follow').checked){const Ro=Math.min(W*.47,H*.46),b=cv.getBoundingClientRect(),c=Math.max(-15,Math.min(15,-(e.clientX-b.left-(W-lay().rp)/2)/Ro*14)),v=Math.max(-15,Math.min(15,-(e.clientY-b.top-H/2)/Ro*14));$('hx').value=c;$('hy').value=v}
 });
 cv.addEventListener('wheel',e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();
  const id=e.shiftKey?'er':'mag',s=$(id),k={mag:.005,er:.05}[id];
