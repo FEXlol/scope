@@ -225,12 +225,13 @@ function drawScene(g,w,hh,fov,yw,pt,step,gs,GC){
     if(GC.c.width!==cw||GC.c.height!==ch){GC.c.width=cw;GC.c.height=ch}else GC.x.clearRect(0,0,cw,ch);
     grass(GC.x,cw,ch,ppd,yw,pt,gs);GC.yw=yw;GC.pt=pt;GC.ppd=ppd;GC.gs=gs;GC.cw=cw;GC.ch=ch;dx=dy=0}
    g.drawImage(GC.c,dx-M,dy-M)}}
+  if(GC)impacts(g,X,Y,ppd,0);/* terrain dust sits behind the targets */
   for(const t of TG){const x=X(t.a),y=Y(t.e),r=t.d/2*ppd;if(x<-r*3||x>w+r*3||r<.4)continue;
    g.fillStyle='rgba(0,0,0,.22)';g.beginPath();g.ellipse(x,y+r*2.15,r*1.1,r*.25,0,0,6.283);g.fill();
    g.fillStyle='#55554f';g.fillRect(x-Math.max(r*.07,.6),y,Math.max(r*.14,1.2),r*2.1);
    if(t.t==0){g.fillStyle='#d8d2c4';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();g.fillStyle='#b3392e';g.beginPath();g.arc(x,y,r*.7,0,6.283);g.fill();g.fillStyle='#e9e4d8';g.beginPath();g.arc(x,y,r*.3,0,6.283);g.fill()}
    else{g.fillStyle='#8a8e92';g.fillRect(x-r,y-r*.8,r*2,r*1.6);g.fillStyle='#caa24a';g.fillRect(x-r*.8,y-r*.6,r*1.6,r*1.2)}}
- if(GC)impacts(g,X,Y,ppd);
+ if(GC)impacts(g,X,Y,ppd,1);
  {const bg=g.createLinearGradient(0,Y(-5),0,Y(-5)+ppd*3);bg.addColorStop(0,'#3d3b27');bg.addColorStop(1,'#12110a');g.fillStyle=bg;
   g.beginPath();g.moveTo(-step,hh+1);for(let x=-step;x<=w+step;x+=step)g.lineTo(x,Y(-5+sm(BT,yw+(x-hw)/ppd)));g.lineTo(w+step,hh+1);g.fill()}
  if(TOD.tn){g.globalCompositeOperation='multiply';g.fillStyle=TOD.tn;g.fillRect(0,0,w,hh);g.globalCompositeOperation='source-over'}
@@ -535,9 +536,11 @@ function shStep(t,dt){
   if(m.pend&&NOW>=m.t0){m.pend=false;if(m.hit)ST.hits++}
   if(!m.pend&&!m.hit&&NOW-m.t0>2.4)IMP.splice(i,1)}
  let nh=0;for(let i=0;i<IMP.length;i++)if(IMP[i].hit&&++nh>0&&IMP.length>120&&nh<=IMP.filter(x=>x.hit).length-80){IMP.splice(i,1);i--}}
-function impacts(g,X,Y,ppd){
+function impacts(g,X,Y,ppd,pass){/* pass 0: dust from misses (behind targets), pass 1: hits on targets */
  for(const m of IMP){
-  if(NOW<m.t0)continue;const age=NOW-m.t0,x=X(m.a),y=Y(m.e);
+  if(NOW<m.t0)continue;const age=NOW-m.t0,x=X(m.a);
+  if(m.hit?pass===0:pass===1)continue;
+  let y=Y(m.e);if(!m.hit&&m.li>=0){let top=-99;for(let k=m.li+1;k<L.length;k++){const v=sm(ET[k],m.a);if(v>top)top=v}if(top>-99&&m.e<top)y=Y(top)}/* a strike hidden behind nearer hills is shown at their ridge line, not drawn over them */
   if(m.hit){const r=Math.max(1.2,m.tr*ppd);
    g.fillStyle='rgba(255,255,255,.35)';g.beginPath();g.arc(x,y,r*1.5,0,6.283);g.fill();g.fillStyle='#0c0c0c';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();
    if(age<.2){const u=age/.2,R=m.td*.5*ppd*(.5+u);const gr=g.createRadialGradient(x,y,0,x,y,R);gr.addColorStop(0,'rgba(255,240,190,'+(1-u)+')');gr.addColorStop(1,'rgba(255,200,100,0)');g.fillStyle=gr;g.fillRect(x-R,y-R,2*R,2*R)}}
