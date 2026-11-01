@@ -129,7 +129,7 @@ function gen(idx,k){const r=[];for(let i=0;i<600;i++)r.push({a:-100+i*200/600+(h
 const TR=[null,null,gen(2,.9),gen(3,1.8),null];
 /* simple targets in the field: [type (0 paper bullseye, 1 steel plate), size in m, range in m, azimuth in deg]. Real sizes and ranges, so angular size and bullet drop follow from the range. */
 const KM=57.2958,TSHP=[{e:[[0,0,1,1]]},{p:[[-1,-.8],[1,-.8],[1,.8],[-1,.8]]}];
-const TG=[[0,.6,100,-4],[1,.5,150,6],[0,.6,200,-11],[1,.5,250,12],[1,.6,300,-2],[0,.7,400,8],[1,.6,500,-7],[0,.8,600,3]].map(([t,sz,R,az])=>({a:az,e:-Math.atan(1.8/R)*KM+(2.15*sz/2+.05)/R*KM,d:sz/R*KM,t,R}));
+const TG=[[0,.6,100,-4],[1,.5,150,6],[0,.6,200,-11],[1,.5,250,12],[1,.6,300,-2],[0,.7,400,8],[1,.6,500,-7],[0,.8,600,3]].map(([t,sz,R,az])=>({a:az,e:(R<=220?sm(ET[4],az):R<=450?sm(ET[3],az):sm(ET[2],az))-.02+(2.15*sz/2+.05)/R*KM,d:sz/R*KM,t,R}));/* targets stand on the terrain ridge nearest their range (layers at 220/450/900 m), not on an invisible flat plane */
 function inPoly(p,u,v){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++){const a=p[i],b=p[j];if((a[1]>v)!=(b[1]>v)&&u<(b[0]-a[0])*(v-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
 function hitT(T,ia,ie){const k=T.d/2,u=(ia-T.a)/k,v=(T.e-ie)/k,S=TSHP[T.t];
  if(S.p&&inPoly(S.p,u,v))return true;for(const q of S.e||[])if(((u-q[0])/q[2])**2+((v-q[1])/q[3])**2<1)return true;return false}
@@ -411,13 +411,13 @@ function frame(ts){
  const shift=hx*par*4*Math.sqrt(mag/4),shiftV=hy*par*4*Math.sqrt(mag/4);
  AIM.a=yaw+sy+dA;AIM.e=pitch+sp+dE;/* the bullet follows the scope axis; the parallax-shifted picture under the reticle does not */
  const kzv=Math.max(.3,Math.min(1.3,Math.max(.12,Math.min(1.3,.97+(er-90)/90*.9))/.97));/* eye relief moves the field stop, it must not change magnification: draw the picture with a field widened by es*kz so that, after the kz scale below, its net scale stays R/10 per degree at 1x */
-  drawScene(sctx,S,S,fovS*1.3*es*kzv,yaw+sy+dA-shift*es/ppdD,pitch+sp+dE+shiftV*es/ppdD,Math.max(1,Math.round(S/450)),Q[qi].g,GCa);
+  drawScene(sctx,S,S,fovS*1.3*es,yaw+sy+dA-shift*es/ppdD,pitch+sp+dE+shiftV*es/ppdD,Math.max(1,Math.round(S/450)),Q[qi].g,GCa);
  ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,6.283);ctx.clip();
  /* Depth parallax between the housing and what is inside it. The reticle sits in the eyepiece's focal plane, so it is seen at infinity: it stays fixed in angle,
    while the housing rim, a distance zh from the eye, appears to move by head/zh. The scope circle R spans tan(10 deg) = .1763, so a head offset h shifts the reticle,
    field stop and picture against the housing by h/zh * R/.1763 pixels. zh is the distance to the visible edge of the housing, which is unknown: ZH sets it as a multiple of the eye relief. tanh stops it running off to infinity at large offsets. */
  const kz=Math.max(.3,Math.min(1.3,Math.max(.12,Math.min(1.3,.97+(er-90)/90*.9))/.97));/* field stop size vs nominal: reticle and picture scale with it as eye relief moves in depth */
- ctx.save();ctx.translate(cx+ox,cy+oy);ctx.rotate(-rollA);ctx.scale(kz,kz);caDraw(ctx,R);ctx.restore();/* counter-rotated: the picture is the level world */
+ ctx.save();ctx.translate(cx+ox,cy+oy);ctx.rotate(-rollA);caDraw(ctx,R);ctx.restore();/* counter-rotated: the picture is the level world */
  ctx.drawImage(oc,cx-R,cy-R,2*R,2*R);
  const refPpd=2*R/(20/10),mpx=($('ret').value=='ffp'?ppdD:refPpd)*.0573;/* both planes ride on R, so the reticle follows the sharp field stop (R*kr) as eye relief changes; FFP still scales with zoom */
  const ill=$('ill').checked;
@@ -425,7 +425,7 @@ function frame(ts){
  const PHY=$('phys').checked;
  const EP=50/mag,eh=EP/2+4,es2=Math.max(.3,3.5-(er-60)*.0457),bx=hx/eh*R*2*es2,by=hy/eh*R*2*es2,bd=Math.hypot(bx,by);
  const d=er-90,Rb=Math.max(.2*R,R*(1.3-d/90*1.8)),soft=R*.13;
- const rx=cx+ox,ry=cy+oy,Rf=PHY?R*Math.max(.12,Math.min(1.3,.97+d/90*.9)):Math.max(.12*R,Math.min(R*1.3,R*(.96+d/90*.9)));
+ const rx=cx+ox,ry=cy+oy,Rf=R*.97/es;/* sharp field-stop shadow edge: fixed size on screen (cancels the housing's eye-relief scale es) */
  const caS=.2+.8*cl01((TOD.se+8)/22),fwid=R*.0025+.6,fdd=fwid*(.4+.6*caS),RfB=Rf+fdd+fwid*.6;
 if(PHY){
  /* eye relief blue fringe is drawn first so the scope shadow below darkens it too */
@@ -451,7 +451,7 @@ if(PHY){
  }
  /* reticle sits above both shadows, clipped to the field stop */
  ctx.save();ctx.beginPath();ctx.arc(rx,ry,Rf,0,6.283);ctx.clip();
- const kr=Rf/(R*.97);/* the reticle scales with the sharp field stop (same factor for first and second focal plane) */
+ const kr=1/es;/* reticle fixed size on screen (cancels the housing's eye-relief scale es) *//* the reticle scales with the sharp field stop (same factor for first and second focal plane) */
  ctx.translate(rx,ry);ctx.scale(kr,kr);ctx.translate(-rx,-ry);
  reticle(ctx,rx,ry,R*3,mpx,ill);ctx.restore();
  ctx.restore();
@@ -520,6 +520,9 @@ function fire(){
  if(!m)for(let li=4;li>=0;li--){const b=ball(LR[li]),ia=a+b.da,ie=e+b.de;
   if(ie<sm(ET[li],ia)){m={a:ia,e:ie,t0:NOW+b.t,tof:b.t,id:ST.shots,hit:false,li,R:LR[li],pend:true};break}}
  if(!m)m={a,e,t0:NOW+1,tof:1,id:ST.shots,hit:false,li:-1,pend:true};
+ if(!m.hit){/* a miss that flies past a target kicks up its dust where the bullet crossed that target's range, not on the far hill it would hit later */
+  let best=null,bd=1;for(const T of TG){const d=Math.abs(m.a-T.a);if(d<bd){bd=d;best=T}}
+  if(best){const bb=ball(best.R),pe=e+bb.de;if(Math.abs(pe-best.e)<.6){const li=best.R<=220?4:best.R<=450?3:2;m.a=a;m.e=pe;m.t0=NOW+bb.t;m.tof=bb.t;m.li=li;m.R=best.R}}}
  IMP.push(m);
  const ac=aud();if(ac)sndShot(ac,ac.currentTime+.01,m)}
 function shStep(t,dt){
@@ -533,7 +536,8 @@ function shStep(t,dt){
   if(!m.pend&&!m.hit&&NOW-m.t0>2.4)IMP.splice(i,1)}
  let nh=0;for(let i=0;i<IMP.length;i++)if(IMP[i].hit&&++nh>0&&IMP.length>120&&nh<=IMP.filter(x=>x.hit).length-80){IMP.splice(i,1);i--}}
 function impacts(g,X,Y,ppd){
- for(const m of IMP){if(NOW<m.t0)continue;const age=NOW-m.t0,x=X(m.a),y=Y(m.e);
+ for(const m of IMP){
+  if(NOW<m.t0)continue;const age=NOW-m.t0,x=X(m.a),y=Y(m.e);
   if(m.hit){const r=Math.max(1.2,m.tr*ppd);
    g.fillStyle='rgba(255,255,255,.35)';g.beginPath();g.arc(x,y,r*1.5,0,6.283);g.fill();g.fillStyle='#0c0c0c';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();
    if(age<.2){const u=age/.2,R=m.td*.5*ppd*(.5+u);const gr=g.createRadialGradient(x,y,0,x,y,R);gr.addColorStop(0,'rgba(255,240,190,'+(1-u)+')');gr.addColorStop(1,'rgba(255,200,100,0)');g.fillStyle=gr;g.fillRect(x-R,y-R,2*R,2*R)}}
