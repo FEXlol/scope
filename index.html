@@ -29,7 +29,7 @@ body.port #p{left:8px;right:8px;width:auto;bottom:8px;max-height:46%}
 <button id="pt" type="button"></button>
 <button id="fire" type="button" style="width:100%;margin:0 0 8px;padding:8px;background:#1d2a25;color:var(--acc);border:1px solid var(--acc);border-radius:6px;font:inherit;font-weight:600">Fire (Space)</button>
 <details open><summary>Scope</summary>
-<label><span>Magnification <output id="o_mag"></output></span><input id="mag" type="range" min="1" max="10" step="0.1" value="6"></label>
+<label><span>Magnification <output id="o_mag"></output></span><input id="mag" type="range" min="1" max="10" step="0.01" value="6"></label>
 <label><span>Eye relief <output id="o_er"></output></span><input id="er" type="range" min="60" max="130" step="0.1" value="90"></label>
 <select id="ret"><option value="ffp">Reticle: first focal plane</option><option value="sfp">Reticle: second focal plane</option></select>
 <label class="chk"><input type="checkbox" id="ill"> Illuminated reticle</label>
@@ -59,13 +59,13 @@ body.port #p{left:8px;right:8px;width:auto;bottom:8px;max-height:46%}
 <p class="hint" id="gs" style="display:none"></p>
 </details>
 <details><summary>Controls help</summary>
-<p class="hint">Space or click/tap: fire, then work the bolt.<br>WASD or arrows: aim.<br>Shift+WASD: move your head (turns off mouse follow).<br>Wheel: zoom.<br>Shift+wheel: eye relief.<br>Phone: turn on Gyro head offset and tilt the phone; with Twist on, tilting the top of the phone to the right adds eye relief.</p>
+<p class="hint">Space or click/tap: fire, then work the bolt.<br>WASD or arrows: aim.<br>Shift+WASD: move your head (turns off mouse follow).<br>Wheel: zoom.<br>Drag the lever on the side of the scope: zoom.<br>Shift+wheel: eye relief.<br>Phone: turn on Gyro head offset and tilt the phone; with Twist on, tilting the top of the phone to the right adds eye relief.</p>
 </details>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 const cv=$('c'),ctx=cv.getContext('2d',{alpha:false});
-const per=document.createElement('canvas'),pctx=per.getContext('2d',{alpha:false});
+const per=document.createElement('canvas'),pctx=per.getContext('2d',{alpha:false});let PM=0;/* extra border (px) the wide view is drawn with on every side, so tilting it never shows an edge */
 const sc=document.createElement('canvas'),sctx=sc.getContext('2d',{alpha:false});
 const hc=document.createElement('canvas'),oc=document.createElement('canvas');
 /* adaptive quality: s = scope render scale, d = screen dpr scale, g = grass stride */
@@ -113,7 +113,7 @@ function lay(){const c=$('p').classList.contains('min'),land=W>H;return{rp:land&
 function ptxt(){$('pt').textContent=$('p').classList.contains('min')?'Controls ▴':'Hide controls ▾'}
 if(Math.min(innerWidth,innerHeight)<520)$('p').classList.add('min');ptxt();
 $('pt').addEventListener('click',()=>{$('p').classList.toggle('min');ptxt();panelH=$('p').offsetHeight});
-function resize(){document.body.className=innerWidth>innerHeight?'land':'port';nd=Math.min(window.devicePixelRatio||1,2);dpr=Math.max(1,nd*Q[qi].d);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;per.width=Math.ceil(W/5);per.height=Math.ceil(H/5);perKey='';hKey='';panelH=$('p').offsetHeight}
+function resize(){document.body.className=innerWidth>innerHeight?'land':'port';nd=Math.min(window.devicePixelRatio||1,2);dpr=Math.max(1,nd*Q[qi].d);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;PM=Math.ceil(.14*Math.max(W,H));per.width=Math.ceil((W+2*PM)/5);per.height=Math.ceil((H+2*PM)/5);perKey='';hKey='';panelH=$('p').offsetHeight}
 addEventListener('resize',resize);resize();if(window.ResizeObserver)new ResizeObserver(()=>{panelH=$('p').offsetHeight}).observe($('p'));
 
 /* procedural terrain: noise is sampled once into lookup tables */
@@ -127,56 +127,12 @@ const BT=new Float32Array(TN);for(let i=0;i<TN;i++)BT[i]=fbm(TA0+i/TRES,11,.35)*
 function sm(t,a){let u=(a-TA0)*TRES;u=u<0?0:u>TN-2.01?TN-2.01:u;const i=u|0;return t[i]+(t[i+1]-t[i])*(u-i)}
 function gen(idx,k){const r=[];for(let i=0;i<600;i++)r.push({a:-100+i*200/600+(h(i*3+idx)-.5)*.6,s:(.15+h(i+idx*77)*.35)*k,v:h(i+9)});return r}
 const TR=[null,null,gen(2,.9),gen(3,1.8),null];
-/* target types: 0 paper bullseye, 1 steel plate, 2 cardboard silhouette, 3 steel gong, 4 clay disc, 5 steel popper, 6 diamond plate.
-   d is the angular width in degrees. */
-const TG=[];/* targets now live on proper range stations (below): a berm at a known range with real-size targets, so size, drop and sound delay all follow from the distance *//* simple targets in the grass: paper bullseyes (0) and steel plates (1); the range stations below add more when switched on */
-/* outlines in units of the target's radius (y down): polygons and ellipses [cx,cy,rx,ry]; used for both drawing and hit testing */
-const TSHP=[{e:[[0,0,1,1]]},{p:[[-1,-.8],[1,-.8],[1,.8],[-1,.8]]},
- {e:[[0,-1.02,.27,.27]],p:[[-.3,-.7],[.3,-.7],[.78,-.38],[.78,.95],[.42,1.3],[-.42,1.3],[-.78,.95],[-.78,-.38]]},
- {e:[[0,0,1,1]]},{e:[[0,0,1,.42]]},{e:[[0,-.62,.45,.45]],p:[[-.55,-.2],[.55,-.2],[.72,1.25],[-.72,1.25]]},{p:[[0,-1],[1,0],[0,1],[-1,0]]},
- {e:[[-.55,-.3,.26,.12],[.55,-.3,.26,.12]],p:[[-.38,-.25],[.38,-.25],[.3,.4],[.1,1.05],[-.1,1.05],[-.3,.4]]}];
-function tpath(g,T,x,y,r,s=1){const S=TSHP[T];g.beginPath();
- if(S.p){S.p.forEach((q,i)=>i?g.lineTo(x+q[0]*r*s,y+q[1]*r*s):g.moveTo(x+q[0]*r*s,y+q[1]*r*s));g.closePath()}
- for(const q of S.e||[]){g.moveTo(x+(q[0]+q[2]*s)*r,y+q[1]*r);g.ellipse(x+q[0]*r,y+q[1]*r,q[2]*r*s,q[3]*r*s,0,0,6.283)}}
+/* simple targets in the field: [type (0 paper bullseye, 1 steel plate), size in m, range in m, azimuth in deg]. Real sizes and ranges, so angular size and bullet drop follow from the range. */
+const KM=57.2958,TSHP=[{e:[[0,0,1,1]]},{p:[[-1,-.8],[1,-.8],[1,.8],[-1,.8]]}];
+const TG=[[0,.6,100,-4],[1,.5,150,6],[0,.6,200,-11],[1,.5,250,12],[1,.6,300,-2],[0,.7,400,8],[1,.6,500,-7],[0,.8,600,3]].map(([t,sz,R,az])=>({a:az,e:-Math.atan(1.8/R)*KM+(2.15*sz/2+.05)/R*KM,d:sz/R*KM,t,R}));
 function inPoly(p,u,v){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++){const a=p[i],b=p[j];if((a[1]>v)!=(b[1]>v)&&u<(b[0]-a[0])*(v-a[1])/(b[1]-a[1])+a[0])c=!c}return c}
 function hitT(T,ia,ie){const k=T.d/2,u=(ia-T.a)/k,v=(T.e-ie)/k,S=TSHP[T.t];
  if(S.p&&inPoly(S.p,u,v))return true;for(const q of S.e||[])if(((u-q[0])/q[2])**2+((v-q[1])/q[3])**2<1)return true;return false}
-/* Firing-line stations: a dirt berm at a known range with a red rail of hanging plates, stand-alone plates on stakes and a distance sign (metres).
-   Plates are [type, size in m, x offset in m]; type 7 is a deer head. Real sizes and ranges, so their angular size and bullet drop follow from the range. */
-const KM=57.2958,TOPR=[1,.8,1.3,1,.42,1.07,1,1.2],GH=[2.15,2.15,2.3,2,1,1.35,2.15,2.15];
-const STN=[
- {a:1,R:100,wb:18,bh:2.8,stand:[[0,.5,-3.2],[2,.55,-1.1],[0,.5,1.1],[2,.55,3.2]]},
- {a:10,R:150,wb:20,bh:2.9,hang:[[1,.5,-2.4],[1,.5,-.9],[6,.5,.7],[6,.45,2.1]],stand:[[5,.5,4.2]]},
- {a:-9,R:200,wb:22,bh:3,hang:[[3,.5,-3],[3,.5,-1.5],[3,.45,0],[3,.4,1.4]],stand:[[4,.3,3.6],[0,.5,-5.2]]},
- {a:-15,R:300,wb:26,bh:3.3,hang:[[3,.7,-3.9],[3,.6,-2.7],[3,.5,-1.6],[3,.4,-.6],[7,.5,.7]],stand:[[1,.5,3.2]]},
- {a:-5,R:400,wb:28,bh:3.6,hang:[[1,.6,-3.4],[1,.55,-2.2],[1,.45,-1.1],[1,.4,-.1],[1,.32,.8],[1,.28,1.6]],stand:[[0,.5,4.2]]},
- {a:5,R:500,wb:27,bh:3.4,hang:[[6,.6,-3],[6,.55,-1.8],[6,.5,-.6],[6,.5,.6],[6,.45,1.8]],stand:[[0,.55,4.5]]},
- {a:14,R:600,wb:30,bh:3.8,stand:[[0,.6,-1.6],[5,.55,1.4],[2,.6,3.5]]},
- {a:-24,R:700,wb:28,bh:3.5,hang:[[3,.7,-2.6],[3,.6,-1.4],[3,.5,-.3],[3,.45,.7],[2,.7,2.2]],stand:[[0,.5,4.6]]},
- {a:23,R:800,wb:29,bh:3.7,hang:[[2,.8,-2.4],[3,.7,-.9],[3,.6,.4],[3,.5,1.5],[7,.6,2.9]],stand:[[5,.6,5]]}];
-const SHOW_TARGETS=true,SHOW_STATIONS=true;/* set both to true to bring back the range stations and their plates */
-for(const S of STN){S.eb=-Math.atan(1.8/S.R)*KM;S.n=String(S.R);S.hb=3;let m=0;
- if(!SHOW_TARGETS){S.fx=0;S.hang=null;continue}
- for(const [t,sz,x] of S.hang||[]){const ym=S.hb-.1-.25-TOPR[t]*sz/2;TG.push({a:S.a+x/S.R*KM,e:S.eb+ym/S.R*KM,d:sz/S.R*KM,t,R:S.R,w:1,hang:1,ch:.5/sz});m=Math.max(m,Math.abs(x)+sz/2)}
- for(const [t,sz,x] of S.stand||[])TG.push({a:S.a+x/S.R*KM,e:S.eb+(GH[t]*sz/2+.05)/S.R*KM,d:sz/S.R*KM,t,R:S.R,w:1});
- S.fx=m+.9}
-STN.sort((p,q)=>q.R-p.R);
-function drawStation(g,X,Y,ppd,w,S){
- const pm=ppd*KM/S.R,x0=X(S.a),y0=Y(S.eb),bw=S.wb/2*pm,bh=S.bh*pm;if(x0<-bw*1.4||x0>w+bw*1.4)return;
- g.beginPath();g.moveTo(x0-bw,y0+pm*.3);
- for(let i=0;i<=22;i++){const u=i/11-1;g.lineTo(x0+u*bw,y0-bh*Math.pow(Math.max(0,1-u*u),1.15)*(1+.07*Math.sin(u*7+S.R)))}
- g.lineTo(x0+bw,y0+pm*.3);g.closePath();
- let gr=g.createLinearGradient(0,y0-bh,0,y0);gr.addColorStop(0,'#3f5a2e');gr.addColorStop(.4,'#556f3a');gr.addColorStop(1,'#46602f');g.fillStyle=gr;g.fill();
- g.beginPath();g.moveTo(x0-bw*.7,y0+pm*.1);
- for(let i=0;i<=16;i++){const v=i/8-1,u=v*.7;g.lineTo(x0+u*bw,y0-bh*Math.pow(Math.max(0,1-u*u),1.15)*.72)}
- g.lineTo(x0+bw*.7,y0+pm*.1);g.closePath();
- gr=g.createLinearGradient(0,y0-bh*.75,0,y0);gr.addColorStop(0,'#8b5e3c');gr.addColorStop(1,'#68452f');g.fillStyle=gr;g.fill();
- if(S.hang){const fx=S.fx*pm,hb=S.hb*pm;g.fillStyle='#2c2c2a';
-  for(const k of[-1,1])g.fillRect(x0+k*fx-pm*.06,y0-hb-pm*.1,pm*.12,hb+pm*.1);
-  g.fillStyle='#a8342c';g.fillRect(x0-fx-pm*.2,y0-hb-pm*.1,2*fx+pm*.4,pm*.2)}
- const xs=x0-bw-pm*1.6;g.fillStyle='#2c2c2a';g.fillRect(xs-pm*.04,y0-pm*2.2,pm*.08,pm*2.2);
- g.fillStyle='#ecece6';g.fillRect(xs-pm*.8,y0-pm*3.15,pm*1.6,pm*.95);g.strokeStyle='#2c2c2a';g.lineWidth=Math.max(.5,pm*.04);g.strokeRect(xs-pm*.8,y0-pm*3.15,pm*1.6,pm*.95);
- if(pm*.6>=4){g.fillStyle='#161616';g.font='bold '+pm*.6+'px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(S.n,xs,y0-pm*2.67)}}
 const NB=6,TB=4,LC=L.map(l=>'rgb('+l.col+')');
 const TCOL=L.map(l=>Array.from({length:TB},(_,b)=>'rgb('+l.col.map(v=>v*(.7+(b+.5)/TB*.25)|0)+')'));
 for(const T of TR)if(T)for(const t of T)t.b=Math.min(TB-1,t.v*TB|0);
@@ -261,7 +217,7 @@ function drawScene(g,w,hh,fov,yw,pt,step,gs,GC){
     for(let i=0;i<n;i++){const t=vis[i];if(t.b!==b)continue;const by=Y(sm(et,t.a))+ppd*t.s*.1,ht=t.s*ppd,wd=ht*.22,x=X(t.a);g.moveTo(x-wd,by);g.lineTo(x,by-ht);g.lineTo(x+wd,by)}
     g.fill()}}}
  const gy0=Y(-1.1);
- gr=g.createLinearGradient(0,gy0,0,gy0+ppd*4);gr.addColorStop(0,'rgba(190,190,120,.1)');gr.addColorStop(1,'rgba(20,28,10,.28)');
+ gr=g.createLinearGradient(0,gy0-ppd,0,gy0+ppd*4);gr.addColorStop(0,'rgba(190,190,120,0)');gr.addColorStop(.2,'rgba(190,190,120,.1)');gr.addColorStop(1,'rgba(20,28,10,.28)');/* fades in from nothing, so the haze has no hard top edge */
  g.fillStyle=gr;g.fillRect(0,Math.max(0,gy0-ppd),w,hh);
  if(ppd>12){if(GC){tiles(g,w,hh,ppd,yw,pt)}else if(!GC)grass(g,w,hh,ppd,yw,pt,gs);
   else{const M=Math.round(w*.25),cw=w+2*M,ch=hh+2*M;let dx=(GC.yw-yw)*ppd,dy=(pt-GC.pt)*ppd;
@@ -269,40 +225,11 @@ function drawScene(g,w,hh,fov,yw,pt,step,gs,GC){
     if(GC.c.width!==cw||GC.c.height!==ch){GC.c.width=cw;GC.c.height=ch}else GC.x.clearRect(0,0,cw,ch);
     grass(GC.x,cw,ch,ppd,yw,pt,gs);GC.yw=yw;GC.pt=pt;GC.ppd=ppd;GC.gs=gs;GC.cw=cw;GC.ch=ch;dx=dy=0}
    g.drawImage(GC.c,dx-M,dy-M)}}
- if(SHOW_STATIONS)for(const S of STN)drawStation(g,X,Y,ppd,w,S);
- for(const t of TG){const x=X(t.a),y=Y(t.e),r=t.d/2*ppd;if(x<-r*3||x>w+r*3||r<.4)continue;
-  const T=t.t,W=t.w,hg=t.hang,lw=Math.max(.5,r*.05),post=()=>{if(!hg){g.fillStyle='#2a2a28';g.fillRect(x-r*.07,y,r*.14,r*2.1)}};
-  if(!hg){g.fillStyle='rgba(0,0,0,.22)';g.beginPath();g.ellipse(x,y+r*2.15,r*1.1,r*.25,0,0,6.283);g.fill()}
-  else{g.strokeStyle='#4a4a46';g.lineWidth=Math.max(.5,r*.06);const tr=TOPR[T]*r,c=t.ch*r;g.beginPath();g.moveTo(x-r*.35,y-tr);g.lineTo(x-r*.3,y-tr-c);g.moveTo(x+r*.35,y-tr);g.lineTo(x+r*.3,y-tr-c);g.stroke()}
-  if(T==0){post();
-   if(W){g.fillStyle='#ebebe6';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();g.strokeStyle='#8f8f8a';g.lineWidth=lw;g.stroke();g.strokeStyle='#c9c9c3';g.beginPath();g.arc(x,y,r*.62,0,6.283);g.stroke()}
-   else{g.fillStyle='#d8d2c4';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();g.fillStyle='#b3392e';g.beginPath();g.arc(x,y,r*.7,0,6.283);g.fill();g.fillStyle='#e9e4d8';g.beginPath();g.arc(x,y,r*.3,0,6.283);g.fill()}}
-  else if(T==1){post();
-   if(W){g.fillStyle='#e9e9e4';g.fillRect(x-r,y-r*.8,r*2,r*1.6);g.strokeStyle='#8f8f8a';g.lineWidth=lw;g.strokeRect(x-r,y-r*.8,r*2,r*1.6);g.fillStyle='#dcdcd6';g.fillRect(x-r*.8,y-r*.6,r*1.6,r*1.2)}
+  for(const t of TG){const x=X(t.a),y=Y(t.e),r=t.d/2*ppd;if(x<-r*3||x>w+r*3||r<.4)continue;
+   g.fillStyle='rgba(0,0,0,.22)';g.beginPath();g.ellipse(x,y+r*2.15,r*1.1,r*.25,0,0,6.283);g.fill();
+   g.fillStyle='#55554f';g.fillRect(x-Math.max(r*.07,.6),y,Math.max(r*.14,1.2),r*2.1);
+   if(t.t==0){g.fillStyle='#d8d2c4';g.beginPath();g.arc(x,y,r,0,6.283);g.fill();g.fillStyle='#b3392e';g.beginPath();g.arc(x,y,r*.7,0,6.283);g.fill();g.fillStyle='#e9e4d8';g.beginPath();g.arc(x,y,r*.3,0,6.283);g.fill()}
    else{g.fillStyle='#8a8e92';g.fillRect(x-r,y-r*.8,r*2,r*1.6);g.fillStyle='#caa24a';g.fillRect(x-r*.8,y-r*.6,r*1.6,r*1.2)}}
-  else if(T==2){if(!hg){g.fillStyle='#6b5a40';g.fillRect(x-r*.1,y+r*.8,r*.2,r*1.45)}
-   tpath(g,2,x,y,r);g.fillStyle=W?'#e8e6df':'#b89c6a';g.fill();g.lineWidth=Math.max(.5,r*.03);g.strokeStyle=W?'#8a8780':'#7d6a45';g.stroke();
-   tpath(g,2,x,y+r*.12,r,.5);g.stroke();g.beginPath();g.moveTo(x-r*.3,y-r*.7);g.lineTo(x+r*.3,y-r*.7);g.stroke();
-   if(W){g.fillStyle='#b3392e';g.beginPath();g.arc(x,y+r*.15,r*.16,0,6.283);g.fill()}}
-  else if(T==3){
-   if(!hg){g.fillStyle='#34332f';g.fillRect(x-r*1.3,y-r*1.55,r*.1,r*3.75);g.fillRect(x+r*1.2,y-r*1.55,r*.1,r*3.75);g.fillRect(x-r*1.3,y-r*1.55,r*2.6,r*.1);
-    g.strokeStyle='#55534d';g.lineWidth=Math.max(.6,r*.04);g.beginPath();g.moveTo(x-r*.55,y-r*1.45);g.lineTo(x-r*.4,y-r*.9);g.moveTo(x+r*.55,y-r*1.45);g.lineTo(x+r*.4,y-r*.9);g.stroke()}
-   tpath(g,3,x,y,r);g.fillStyle=W?'#eaeae5':'#5d6368';g.fill();g.strokeStyle=W?'#8d8d88':'#2c3034';g.lineWidth=Math.max(.6,r*.07);g.stroke();
-   tpath(g,3,x,y,r,.78);g.strokeStyle=W?'#c5c5c0':'#8b9298';g.lineWidth=Math.max(.5,r*.04);g.stroke();
-   if(!W){g.fillStyle='rgba(255,255,255,.12)';g.beginPath();g.ellipse(x-r*.28,y-r*.32,r*.45,r*.22,-.6,0,6.283);g.fill()}}
-  else if(T==4){if(!hg){g.fillStyle='#2a2a28';g.fillRect(x-r*.05,y,r*.1,r*2.3)}
-   tpath(g,4,x,y,r);g.fillStyle='#e8742a';g.fill();g.strokeStyle='#b3501a';g.lineWidth=Math.max(.5,r*.08);g.stroke();
-   g.fillStyle='#f29a55';g.beginPath();g.ellipse(x,y-r*.06,r*.68,r*.24,0,0,6.283);g.fill()}
-  else if(T==5){if(!hg){g.fillStyle='#2a2a28';g.fillRect(x-r*.9,y+r*1.25,r*1.8,r*.14)}
-   tpath(g,5,x,y,r);g.fillStyle='#d6d9d6';g.fill();g.strokeStyle='#4a4d4a';g.lineWidth=lw;g.stroke();
-   g.fillStyle='#b3392e';g.beginPath();g.ellipse(x,y+r*.55,r*.38,r*.38,0,0,6.283);g.fill()}
-  else if(T==6){post();
-   tpath(g,6,x,y,r);g.fillStyle=W?'#ececE6':'#8a8e92';g.fill();g.strokeStyle=W?'#8f8f8a':'#3c4044';g.lineWidth=lw;g.stroke();
-   tpath(g,6,x,y,r,.62);g.fillStyle=W?'#2a2a28':'#d6c25a';g.fill()}
-  else if(T==7){if(!hg){g.fillStyle='#2a2a28';g.fillRect(x-r*.07,y+r*.9,r*.14,r*1.25);g.fillStyle='rgba(0,0,0,.22)';g.beginPath();g.ellipse(x,y+r*2.15,r*1.1,r*.25,0,0,6.283);g.fill()}tpath(g,7,x,y,r);g.fillStyle='#ece9e2';g.fill();g.strokeStyle='#8a8780';g.lineWidth=lw;g.stroke();
-   g.strokeStyle='#ece9e2';g.lineWidth=Math.max(.8,r*.13);g.lineCap='round';
-   for(const k of[-1,1]){g.beginPath();g.moveTo(x+k*r*.22,y-r*.25);g.lineTo(x+k*r*.5,y-r*.75);g.lineTo(x+k*r*.8,y-r*1.15);g.moveTo(x+k*r*.5,y-r*.75);g.lineTo(x+k*r*.95,y-r*.7);g.moveTo(x+k*r*.68,y-r*.97);g.lineTo(x+k*r*.58,y-r*1.28);g.stroke()}
-   g.lineCap='butt'}}
  if(GC)impacts(g,X,Y,ppd);
  {const bg=g.createLinearGradient(0,Y(-5),0,Y(-5)+ppd*3);bg.addColorStop(0,'#3d3b27');bg.addColorStop(1,'#12110a');g.fillStyle=bg;
   g.beginPath();g.moveTo(-step,hh+1);for(let x=-step;x<=w+step;x+=step)g.lineTo(x,Y(-5+sm(BT,yw+(x-hw)/ppd)));g.lineTo(w+step,hh+1);g.fill()}
@@ -331,7 +258,7 @@ function buildCaches(R,Ro){
    in front of the ocular bell, so the base of the lever is hidden behind the bell and only the paddle sticks out past its edge, slightly out of focus. It sits at about 9:30
    at 1x and swings round clockwise through the top and right to the lower right (about 4:30) at 10x, following the animated magnification on a log scale like a zoom cam.
    The paddle is rendered once into LV_C (1000 px per Ro, x from .88 Ro, y from -.12 Ro) and then scaled and rotated. */
-const LV_A1=-165*Math.PI/180,LV_A10=32*Math.PI/180,LV_U=1000,LV_X0=.5,LV_Y0=.34;let LV_C=null;
+const LV_A1=-165*Math.PI/180,LV_A10=32*Math.PI/180,LV_U=1000,LV_X0=.5,LV_Y0=.34;let LV_C=null,LVG=null,LVD=null;
 function lvBuild(){
  const c=document.createElement('canvas');c.width=Math.round(.88*LV_U);c.height=Math.round(2*LV_Y0*LV_U);const g=c.getContext('2d');
  const U=LV_U,Y=y=>(y+LV_Y0)*U,X=x=>(x-LV_X0)*U;
@@ -375,7 +302,7 @@ function drawLever(g,cx,cy,Ro,mag,er){
  if(!LV_C)lvBuild();
  const k=(er/(er+LV_DD))/(90/(90+LV_DD));
  const a=LV_A1+(LV_A10-LV_A1)*Math.log(Math.max(1,Math.min(10,mag)))/Math.log(10);
- g.save();g.translate(cx,cy);g.rotate(a);g.scale(k,k);/* the lever now points along +x */
+ LVG={cx,cy,Ro,k,a};g.save();g.translate(cx,cy);g.rotate(a);g.scale(k,k);/* the lever now points along +x */
  g.shadowColor='rgba(0,0,0,.25)';g.shadowBlur=Ro*.012;g.shadowOffsetX=Ro*.002;g.shadowOffsetY=Ro*.006;
  
  g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
@@ -455,34 +382,44 @@ function frame(ts){
  const f=1-Math.exp(-dt*(gyr&&$('gyro').checked?40:6));hs.x+=(-$('hx').value-hs.x)*f;hs.y+=($('hy').value-hs.y)*f;
  const hx=hs.x+swy*(Math.sin(t*.9+2)*.5+Math.sin(t*2.1)*.2)+SH.hx.p+AN.hx,hy=hs.y+swy*(Math.sin(t*1.3)*.4+Math.sin(t*2.7+1)*.15)+SH.hy.p+AN.hy;
  const {rp,ph}=lay();
- const es=Math.pow(90/er,.6),R=Math.min((W-rp)*.47,(H-ph)*.46)*es*.84,Ro=R*1.0952,/* outer housing ring is half as thick as before */cx=(W-rp)/2+hx*R*.014,cy=(H-ph)/2+hy*R*.014;
+ const es=Math.pow(90/er,.6),R=Math.min((W-rp)*(W<H?.42:.47),(H-ph)*.46)*es*.84,Ro=R*1.0952,/* outer housing ring is half as thick as before */cx=(W-rp)/2+hx*R*.014,cy=(H-ph)/2+hy*R*.014;
  const fovS=20/mag,ppdD=2*R/fovS;
+ const ZH=2.5,MOVE=.35,kp=MOVE*R/(.1763*er*ZH),SATP=R*1.1,ox=-SATP*Math.tanh(hx*kp/SATP),oy=-SATP*Math.tanh(hy*kp/SATP);
  const sy=swy*(Math.sin(t*.8)*.02+Math.sin(t*2.3)*.006)+SH.yaw.p+AN.yaw,sp=swy*(Math.sin(t*1.1)*.03+Math.sin(t*3.1)*.008)+SH.pit.p+AN.pit;
  /* peripheral, out-of-focus wide view */
- const pk=Math.round((yaw+sy*.5)*per.width*.043)+'|'+Math.round((pitch+sp*.5)*per.width*.043)+'|'+$('tod').value;
- if(pk!==perKey){perKey=pk;drawScene(pctx,per.width,per.height,70,yaw+sy*.5,pitch+sp*.5,2,1)}
- ctx.imageSmoothingEnabled=true;ctx.drawImage(per,0,0,W,H);
+ /* at 1x the scope shows 20 deg across its circle, so the surrounding naked-eye view must use the same pixels per degree (R/10 at nominal eye relief), centred on the scope */
+  const perFov=(W+2*PM)*10/(R/es),ppP=(W+2*PM)/perFov,pyw=yaw+sy*.5+rp/2/ppP,ppt=pitch+sp*.5-ph/2/ppP,
+   pk=Math.round(pyw*per.width/perFov*3)+'|'+Math.round(ppt*per.width/perFov*3)+'|'+perFov.toFixed(2)+'|'+$('tod').value;
+  if(pk!==perKey){perKey=pk;drawScene(pctx,per.width,per.height,perFov,pyw,ppt,2,1)}
+ /* The world stays level (head still). Working the bolt rolls the rifle slightly, so the scope rolls against it (anticlockwise, the reticle's top leans left): reticle, housing and lever turn about the scope centre,
+    while the scenery outside and the picture seen through the scope stay level. Only the info panel and the muzzle flash are outside the rolled part (restored below). */
+ const rollA=AN.roll*ROLLK*Math.PI/180;
+ ctx.imageSmoothingEnabled=true;ctx.drawImage(per,-PM,-PM,W+2*PM,H+2*PM);
+ ctx.save();ctx.translate(cx+ox,cy+oy);ctx.rotate(rollA);ctx.translate(-cx-ox,-cy-oy);
  
  let g;
  /* ocular housing */
  const R1=R/es*1.3,Ro1=Ro/es*1.3,hk=R1+'|'+Ro1+'|'+dpr;if(hk!==hKey){hKey=hk;buildCaches(R1,Ro1)}
- drawLever(ctx,cx,cy,Ro,mag,er);/* behind the bell: the lever's base is hidden by the housing */
+ drawLever(ctx,cx,cy,Ro,LVD?+$('mag').value:mag,er);/* behind the bell: the lever's base is hidden by the housing */
  ctx.drawImage(tintCopy(HCT,hc,TOD.tn,hKey),cx-Ro,cy-Ro,2*Ro,2*Ro);
  /* magnified image */
  const q=Math.min(nd,900/(2*R))*Q[qi].s,S=Math.max(64,Math.round(2.6*R*q));
  if(sc.width!==S){sc.width=S;sc.height=S}
+ /* at low zoom the picture must line up with the surroundings seen outside the scope: the window and reticle sit at (cx+ox, cy+oy) on screen, so the picture shows the angle the wide view shows there.
+    The effect fades out by 2x, and the aim point moves with it so the bullet still goes where the reticle is. */
+ const wReg=Math.max(0,Math.min(1,2-mag)),dA=wReg*(cx+ox-(W-rp)/2)/ppP,dE=-wReg*(cy+oy-(H-ph)/2)/ppP;
  const shift=hx*par*4*Math.sqrt(mag/4),shiftV=hy*par*4*Math.sqrt(mag/4);
- AIM.a=yaw+sy;AIM.e=pitch+sp;/* the bullet follows the scope axis; the parallax-shifted picture under the reticle does not */
- drawScene(sctx,S,S,fovS*1.3,yaw+sy-shift/ppdD,pitch+sp+shiftV/ppdD,Math.max(1,Math.round(S/450)),Q[qi].g,GCa);
+ AIM.a=yaw+sy+dA;AIM.e=pitch+sp+dE;/* the bullet follows the scope axis; the parallax-shifted picture under the reticle does not */
+ const kzv=Math.max(.3,Math.min(1.3,Math.max(.12,Math.min(1.3,.97+(er-90)/90*.9))/.97));/* eye relief moves the field stop, it must not change magnification: draw the picture with a field widened by es*kz so that, after the kz scale below, its net scale stays R/10 per degree at 1x */
+  drawScene(sctx,S,S,fovS*1.3*es*kzv,yaw+sy+dA-shift*es/ppdD,pitch+sp+dE+shiftV*es/ppdD,Math.max(1,Math.round(S/450)),Q[qi].g,GCa);
  ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,6.283);ctx.clip();
  /* Depth parallax between the housing and what is inside it. The reticle sits in the eyepiece's focal plane, so it is seen at infinity: it stays fixed in angle,
    while the housing rim, a distance zh from the eye, appears to move by head/zh. The scope circle R spans tan(10 deg) = .1763, so a head offset h shifts the reticle,
    field stop and picture against the housing by h/zh * R/.1763 pixels. zh is the distance to the visible edge of the housing, which is unknown: ZH sets it as a multiple of the eye relief. tanh stops it running off to infinity at large offsets. */
- const ZH=2.5,MOVE=.35,kp=MOVE*R/(.1763*er*ZH),SATP=R*1.1,ox=-SATP*Math.tanh(hx*kp/SATP),oy=-SATP*Math.tanh(hy*kp/SATP);
  const kz=Math.max(.3,Math.min(1.3,Math.max(.12,Math.min(1.3,.97+(er-90)/90*.9))/.97));/* field stop size vs nominal: reticle and picture scale with it as eye relief moves in depth */
- ctx.save();ctx.translate(cx+ox,cy+oy);ctx.scale(kz,kz);ctx.rotate(-AN.roll*Math.PI/180);caDraw(ctx,R);ctx.restore();
+ ctx.save();ctx.translate(cx+ox,cy+oy);ctx.rotate(-rollA);ctx.scale(kz,kz);caDraw(ctx,R);ctx.restore();/* counter-rotated: the picture is the level world */
  ctx.drawImage(oc,cx-R,cy-R,2*R,2*R);
- const refPpd=2*R/(20/10),mpx=($('ret').value=='ffp'?ppdD:refPpd)*.0573;
+ const refPpd=2*R/(20/10),mpx=($('ret').value=='ffp'?ppdD:refPpd)*.0573;/* both planes ride on R, so the reticle follows the sharp field stop (R*kr) as eye relief changes; FFP still scales with zoom */
  const ill=$('ill').checked;
  /* eyebox shadow */
  const PHY=$('phys').checked;
@@ -514,18 +451,20 @@ if(PHY){
  }
  /* reticle sits above both shadows, clipped to the field stop */
  ctx.save();ctx.beginPath();ctx.arc(rx,ry,Rf,0,6.283);ctx.clip();
- ctx.translate(rx,ry);ctx.scale(kz,kz);ctx.translate(-rx,-ry);
+ const kr=Rf/(R*.97);/* the reticle scales with the sharp field stop (same factor for first and second focal plane) */
+ ctx.translate(rx,ry);ctx.scale(kr,kr);ctx.translate(-rx,-ry);
  reticle(ctx,rx,ry,R*3,mpx,ill);ctx.restore();
  ctx.restore();
  ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,R,0,6.283);ctx.stroke();
  /* muzzle flash wash and shot HUD */
+ ctx.restore();/* end of the rolled camera */
  if(ST.flash>.01){ctx.fillStyle='rgba(255,238,205,'+ST.flash*.28+')';ctx.fillRect(0,0,W,H)}
  {const rdy=ST.cham,aw=!ST.cham&&!ST.bolting;ctx.font='12px system-ui,sans-serif';ctx.textAlign='left';ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.6)';
   const l1=rdy?'Round chambered':aw?'Tap to work the bolt':'Working the bolt…',l2='Shots '+ST.shots+'   Hits '+ST.hits;
   ctx.strokeText(l1,16,262);ctx.fillStyle=rdy?'#7fd3b0':'#e8c15a';ctx.fillText(l1,16,262);
   {const fb=$('fire'),ft=rdy?'Fire (Space)':aw?'Work bolt (Space)':'Working the bolt…';if(fb._t!==ft){fb._t=ft;fb.textContent=ft}}
   ctx.strokeText(l2,16,280);ctx.fillStyle='#dde4e8';ctx.fillText(l2,16,280);
-  const l3='Zero 100 m';ctx.strokeText(l3,16,298);ctx.fillStyle='#8996a0';ctx.fillText(l3,16,298)}
+  const l3='Zero 200 m';ctx.strokeText(l3,16,298);ctx.fillStyle='#8996a0';ctx.fillText(l3,16,298)}
  /* eyebox status and minimap */
  const status=PHY?(emMn>.97?'clear':emMx<.04?'blackout':'shadowing'):bd+R<=Rb-soft?'clear':bd>Rb+R*.6?'blackout':'shadowing',scol=status=='clear'?'#7fd3b0':status=='shadowing'?'#e8c15a':'#e8695a';
  const mx=16,my=16+0,bw=150,mcx=mx+bw/2,mcy=my+bw/2,k=2.2;
@@ -548,13 +487,14 @@ requestAnimationFrame(frame);
    Then four bolt events (lift, pull, push, lock) each jolt it again. All of it feeds damped springs that offset the aim,
    the eye relief and the head position, so the eyebox shadow, scope bite and parallax react physically. */
 let NOW=0;
+const ROLLK=1.5;/* strength of the roll while the bolt is worked: 1 = the animation's own roll (about 3 degrees), higher = more; the reticle and scope roll, the world stays level */
 const SH={yaw:{p:0,v:0},pit:{p:0,v:0},er:{p:0,v:0},hx:{p:0,v:0},hy:{p:0,v:0}},AIM={a:0,e:0},IMP=[],ST={shots:0,hits:0,ready:0,cham:true,bolting:false,bt0:-9,flash:0,q:[],rec:1,t0:-9},AN={yaw:0,pit:0,roll:0,er:0,hx:0,hy:0},RD=.6,CYC=2.7,
  BOLT=[['stop',1.05,-.05,-.12,-1.5,-.6,.5],['chamber',1.6,.04,.08,.8,.4,-.3],['lock',1.69,.07,-.10,-1.2,.5,.6]],
  SZK=[.3,.4,.55,.8,1];
 const kick=(s,A)=>{s.v+=A*31};
-/* crude external ballistics: 600 m/s with drag, zeroed at 100 m, scope 5 cm above the bore, no wind.
+/* crude external ballistics, tuned so the drop matches the reticle's 3/4/5/6 hold rows (300/400/500/600 m): zeroed at 200 m, scope 5 cm above the bore, no wind.
    The bullet leaves along the bore line, so parallax error shows up as a miss, and it drops and drifts on the way to the target. */
-const BV=600,BK=.0012,ZR=100,SHH=.05,LR=[3000,1800,900,450,220];
+const BV=1090,BK=.0012,ZR=200,SHH=.05,LR=[3000,1800,900,450,220];
 const tof=R=>(Math.exp(BK*R)-1)/(BK*BV),drop=R=>4.905*tof(R)*tof(R),ZA=(SHH+drop(ZR))/ZR;
 function ball(R){const t=tof(R);return{t,de:(-SHH+R*ZA-drop(R))/R*57.2958,da:0}}
 
@@ -574,10 +514,9 @@ function fire(){
  ST.cham=false;ST.bolting=false;ST.shots++;ST.t0=NOW;ST.flash=1;ST.rec=rec;
  kick(SH.pit,(.55+.1*r())*rec);kick(SH.yaw,.3*r()*rec);kick(SH.er,-9*rec);kick(SH.hx,2.5*r()*rec);kick(SH.hy,1.8*rec);
  /* no random bolt-cycle kicks: the bolt motion is the smooth pose animation only */
- /* targets are treated as 1 m plates, so their size on screen gives their range; the bullet's angle at that range decides the hit */
  let m=null;
- for(const {T,R} of TG.map(T=>({T,R:T.R||1/Math.tan(T.d*Math.PI/180)})).sort((p,q)=>p.R-q.R)){const b=ball(R),ia=a+b.da,ie=e+b.de;
-  if(hitT(T,ia,ie)){m={T,R,a:ia,e:ie,t0:NOW+b.t,tof:b.t,id:ST.shots,hit:true,tr:T.d*.04,td:T.d,li:-1,pend:true};break}}
+  for(const {T,R} of TG.map(T=>({T,R:T.R})).sort((p,q)=>p.R-q.R)){const b=ball(R),ia=a+b.da,ie=e+b.de;
+   if(hitT(T,ia,ie)){m={T,R,a:ia,e:ie,t0:NOW+b.t,tof:b.t,id:ST.shots,hit:true,tr:T.d*.04,td:T.d,li:-1,pend:true};break}}
  if(!m)for(let li=4;li>=0;li--){const b=ball(LR[li]),ia=a+b.da,ie=e+b.de;
   if(ie<sm(ET[li],ia)){m={a:ia,e:ie,t0:NOW+b.t,tof:b.t,id:ST.shots,hit:false,li,R:LR[li],pend:true};break}}
  if(!m)m={a,e,t0:NOW+1,tof:1,id:ST.shots,hit:false,li:-1,pend:true};
@@ -729,12 +668,21 @@ if(!window.DeviceOrientationEvent&&!window.RelativeOrientationSensor){for(const 
 /* input */
 ['hx','hy'].forEach(id=>$(id).addEventListener('input',()=>{$('follow').checked=false}));
 let tap=null;
-cv.addEventListener('pointerdown',e=>{if(e.button!==0)return;drag={x:e.clientX,y:e.clientY};tap={x:e.clientX,y:e.clientY,t:performance.now()};cv.setPointerCapture(e.pointerId)});
-cv.addEventListener('pointerup',e=>{drag=null;if(tap&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<8&&performance.now()-tap.t<400)trigger();tap=null});
-cv.addEventListener('pointercancel',()=>{drag=null;tap=null});
+/* lever dragging: grab the paddle and swing it round the ocular; the angle sets the magnification on the same log scale the lever is drawn with */
+function lvPt(e){const b=cv.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top]}
+function lvHit(px,py){if(!LVG)return false;const dx=px-LVG.cx,dy=py-LVG.cy,c=Math.cos(LVG.a),s=Math.sin(LVG.a),lx=dx*c+dy*s,ly=-dx*s+dy*c,Rk=LVG.Ro*LVG.k;
+  return lx>LVG.Ro*.9&&lx<Rk*1.5&&Math.abs(ly)<Math.max(Rk*.2,30)}
+function lvMag(ang){const T=2*Math.PI,sp=LV_A10-LV_A1;let d=((ang-LV_A1)%T+T)%T,t=d<=sp?d/sp:(d-sp<(T-sp)/2?1:0);return Math.pow(10,t)}
+cv.addEventListener('pointerdown',e=>{if(e.button!==0)return;
+  {const[px,py]=lvPt(e);if(lvHit(px,py)){const T=2*Math.PI;LVD={id:e.pointerId,off:Math.atan2(py-LVG.cy,px-LVG.cx)-LVG.a};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';e.preventDefault();return}}
+  drag={x:e.clientX,y:e.clientY};tap={x:e.clientX,y:e.clientY,t:performance.now()};cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointerup',e=>{if(LVD&&e.pointerId===LVD.id){LVD=null;cv.style.cursor='';return}drag=null;if(tap&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<8&&performance.now()-tap.t<400)trigger();tap=null});
+cv.addEventListener('pointercancel',()=>{drag=null;tap=null;LVD=null;cv.style.cursor=''});
 cv.addEventListener('pointermove',e=>{
+  if(LVD){if(e.pointerId===LVD.id){const[px,py]=lvPt(e),m=lvMag(Math.atan2(py-LVG.cy,px-LVG.cx)-LVD.off),sl=$('mag');sl.value=Math.max(+sl.min,Math.min(+sl.max,m));if(sv.mag!=null)sv.mag=+sl.value}return}
+  if(e.pointerType=='mouse')cv.style.cursor=lvHit(...lvPt(e))?'grab':'';
  const mag=+$('mag').value,fovS=20/mag;
- if(drag&&(e.pointerType!='mouse'||!$('follow').checked)){const r=Math.min(W*.47,H*.46)*.84,k=fovS/(2*r);yaw-=(e.clientX-drag.x)*k;pitch+=(e.clientY-drag.y)*k;yaw=Math.max(-60,Math.min(60,yaw));pitch=Math.max(-4,Math.min(8,pitch));drag={x:e.clientX,y:e.clientY}}
+ if(drag&&(e.pointerType!='mouse'||!$('follow').checked)){const r=Math.min(W*(W<H?.42:.47),H*.46)*.84,k=fovS/(2*r);yaw-=(e.clientX-drag.x)*k;pitch+=(e.clientY-drag.y)*k;yaw=Math.max(-60,Math.min(60,yaw));pitch=Math.max(-4,Math.min(8,pitch));drag={x:e.clientX,y:e.clientY}}
  else if(e.pointerType=='mouse'&&$('follow').checked){const Ro=Math.min(W*.47,H*.46),b=cv.getBoundingClientRect(),c=Math.max(-30,Math.min(30,-(e.clientX-b.left-(W-lay().rp)/2)/Ro*28)),v=Math.max(-30,Math.min(30,-(e.clientY-b.top-H/2)/Ro*28));$('hx').value=-c;$('hy').value=v}
 });
 cv.addEventListener('wheel',e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();
